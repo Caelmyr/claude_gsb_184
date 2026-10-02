@@ -15,12 +15,14 @@
     <div class="flex between mb">
       <div id="job-picker" style="min-width:280px"></div>
       <div class="flex">
-        <a class="btn primary small" id="dl-json" href="#">导出 JSON</a>
+        <button class="btn primary small" id="start-replay" type="button">回放并对比 Replay &amp; Compare</button>
+        <a class="btn small" id="dl-json" href="#">导出 JSON</a>
         <a class="btn small" id="dl-csv" href="#">导出 CSV</a>
       </div>
     </div>
 
     <div class="stat-tiles" id="stats"></div>
+    <div class="card mt" id="replay-panel" style="display:none"><h2>回放对比 <span class="sub">Replay comparison</span></h2><div id="replay-summary"></div><div id="replay-diffs" class="mt"></div></div>
     <div class="grid cols-2 mt">
       <div class="card"><h2>结果分区 <span class="sub">Partitions</span></h2><div id="partitions"></div></div>
       <div class="card"><h2>结果预览 <span class="sub">Preview</span></h2><div id="preview"></div></div>

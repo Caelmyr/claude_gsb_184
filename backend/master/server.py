@@ -25,6 +25,7 @@ from backend.master.fault_tolerance import FaultTolerance
 from backend.master.job_manager import JobManager
 from backend.master.metrics import Metrics
 from backend.master.registry import WorkerRegistry
+from backend.master.replay import DEFAULT_NUMERIC_TOLERANCE, ReplayConflict, ReplayService
 from backend.master.scheduler import Scheduler
 from backend.master.shuffle import ShuffleCoordinator
 from backend.tasks.registry import list_all as list_functions
@@ -50,10 +51,14 @@ class Master:
         self.metrics = Metrics(self.storage)
         self.shuffle = ShuffleCoordinator(self.storage, self.job_manager, self.registry, self.logbus)
         self.fault_tolerance = FaultTolerance(self.storage, self.job_manager, self.config, self.logbus)
+        self.replay = ReplayService(
+            self.storage, self.job_manager, self.job_manager.planner, self.logbus,
+        )
         self.registry.on_death = self.fault_tolerance.handle_worker_death
         self.scheduler = Scheduler(
             self.storage, self.job_manager, self.registry, self.shuffle,
             self.fault_tolerance, self.metrics, self.config, self.logbus,
+            replay=self.replay,
         )
 
         self.app = Flask("master", static_folder=FRONTEND_DIR, static_url_path="")
@@ -89,6 +94,9 @@ class Master:
         app.add_url_rule("/api/jobs/<job_id>/results", "job_results", self._job_results, methods=["GET"])
         app.add_url_rule("/api/jobs/<job_id>/results/download", "job_results_download",
                          self._job_results_download, methods=["GET"])
+        app.add_url_rule("/api/jobs/<job_id>/replays", "job_replays", self._job_replays, methods=["GET", "POST"])
+        app.add_url_rule("/api/replays/<replay_job_id>/report", "replay_report",
+                         self._replay_report, methods=["GET"])
         app.add_url_rule("/api/workers", "workers", self._workers, methods=["GET"])
         app.add_url_rule("/api/workers/<worker_id>/metrics", "worker_metrics", self._worker_metrics, methods=["GET"])
         app.add_url_rule("/api/cluster/metrics", "cluster_metrics", self._cluster_metrics, methods=["GET"])
@@ -201,6 +209,8 @@ class Master:
             return err, code
         if not job.is_terminal:
             self.job_manager.cancel(job)
+            if job.replay_of:
+                self.replay.finalize_replay(job)
         return jsonify(self.job_manager.job_summary(job))
 
     def _job_tasks(self, job_id: str):
@@ -290,6 +300,43 @@ class Master:
             mimetype="application/json",
             headers={"Content-Disposition": f"attachment; filename={job_id}.json"},
         )
+
+    def _job_replays(self, job_id: str):
+        job, err, code = self._get_job(job_id)
+        if job is None:
+            return err, code
+        if request.method == "POST":
+            body = request.get_json(silent=True) or {}
+            try:
+                tolerance = float(body.get("numeric_tolerance", DEFAULT_NUMERIC_TOLERANCE))
+            except (TypeError, ValueError):
+                return jsonify({"error": "numeric_tolerance must be a non-negative number"}), 400
+            if tolerance < 0:
+                return jsonify({"error": "numeric_tolerance must be a non-negative number"}), 400
+            try:
+                replay = self.replay.start_replay(job_id, tolerance=tolerance)
+            except ReplayConflict as exc:
+                return jsonify({"error": str(exc)}), 409
+            except ValueError as exc:
+                return jsonify({"error": str(exc)}), 400
+            return jsonify(self.job_manager.job_summary(replay)), 201
+        return jsonify({"job_id": job_id, "replays": self.replay.list_for_source(job_id)})
+
+    def _replay_report(self, replay_job_id: str):
+        replay, err, code = self._get_job(replay_job_id)
+        if replay is None:
+            return err, code
+        report = self.replay.get_report(replay_job_id)
+        if report is None:
+            return jsonify({
+                "job_id": replay_job_id,
+                "source_job_id": replay.replay_of,
+                "status": replay.replay_status or replay.status,
+                "consistent": False,
+                "difference_count": 0,
+                "differences": [],
+            })
+        return jsonify(report)
 
     def _as_csv(self, job: Job, records: list[dict]) -> Response:
         fieldnames: list[str] = []

@@ -48,6 +48,7 @@ class Scheduler:
         metrics: Metrics,
         config,
         logbus: LogBus,
+        replay=None,
     ) -> None:
         self.storage = storage
         self.job_manager = job_manager
@@ -57,6 +58,7 @@ class Scheduler:
         self.metrics = metrics
         self.config = config
         self.logbus = logbus
+        self.replay = replay
         self.client = HttpClient(timeout=3.0, retries=1)
         self._stop = threading.Event()
         self._thread = threading.Thread(target=self._loop, daemon=True, name="scheduler")
@@ -266,6 +268,9 @@ class Scheduler:
         if status != C.TASK_SUCCEEDED:
             self.registry.task_finished(worker_id, success=False)
             self.fault_tolerance.handle_task_failure(job, task, payload.get("error", ""), worker_id)
+            latest = self.job_manager.get_job(job.job_id)
+            if self.replay is not None and latest is not None and latest.status == C.JOB_FAILED:
+                self.replay.finalize_replay(latest)
             return
 
         # Success path.
@@ -307,7 +312,7 @@ class Scheduler:
             "partition": task.partition,
             "partition_name": pname,
             "task_id": task.task_id,
-            "records": list(reversed(results)),
+            "records": list(results),
             "count": len(results),
             "written_ms": now_ms(),
         }, "jobs", job.job_id, "results", C.STAGE_REDUCE, f"{pname}.json")
@@ -342,6 +347,9 @@ class Scheduler:
 
         self.job_manager.apply_job(job.job_id, apply)
         self.logbus.info(job.job_id, "job succeeded", task_id="job")
+        if self.replay is not None and job.replay_of:
+            completed = self.job_manager.get_job(job.job_id) or job
+            self.replay.finalize_replay(completed)
         self._cleanup_worker_shuffle(job)
 
     def _cleanup_worker_shuffle(self, job: Job) -> None:

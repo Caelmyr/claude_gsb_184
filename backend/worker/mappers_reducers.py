@@ -131,6 +131,6 @@ def distinct_mapper(records: list[Any], params: dict) -> list[tuple[str, Any]]:
     out: list[tuple[str, Any]] = []
     append = out.append
     for rec in records:
-        for word in set(_words(rec)):
+        for word in sorted(set(_words(rec))):
             append((word, 1))
     return out

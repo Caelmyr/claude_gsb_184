@@ -127,6 +127,10 @@ class Job:
     stats: dict = field(default_factory=dict)
     error: str = ""
     params: dict = field(default_factory=dict)
+    replay_of: str = ""
+    replay_status: str = ""
+    replay_summary: dict = field(default_factory=dict)
+    replay_report: dict = field(default_factory=dict)
     version: int = 0
 
     @property

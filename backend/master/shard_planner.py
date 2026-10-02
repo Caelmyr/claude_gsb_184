@@ -15,7 +15,7 @@ from backend.common import constants as C
 from backend.common.ids import shard_id
 from backend.common.jsonutil import now_ms
 from backend.common.models import Job, Task, new_task
-from backend.common.storage import Storage
+from backend.common.storage import Storage, list_files, read_json
 from backend.tasks.samples import generate_input_records
 
 
@@ -76,12 +76,72 @@ class ShardPlanner:
             "input_shards": input_shards,
             "map_tasks": map_tasks,
             "reduce_tasks": reduce_tasks,
-            "total_records": len(records) + 1,
+            "total_records": len(records),
+        }
+
+    def clone_plan(self, source: Job, replay: Job) -> dict:
+        """Copy the source job's exact input shards into a replay job.
+
+        Replay must not regenerate synthetic data: even with a stable seed, the
+        point is to replay the concrete input that was actually used.  This also
+        preserves the exact map split and reduce partition count independently
+        of the cluster's current node allocation.
+        """
+        source_root = self.storage.path(
+            "jobs", source.job_id, "shards", C.STAGE_INPUT,
+        )
+        docs = [doc for path in list_files(source_root, suffix=".json")
+                if (doc := read_json(path))]
+        docs.sort(key=lambda d: int(d.get("index", 0)))
+
+        if len(docs) != source.num_map_tasks:
+            raise ValueError(
+                f"cannot replay {source.job_id}: expected {source.num_map_tasks} input shards, "
+                f"found {len(docs)}"
+            )
+        expected_indexes = list(range(source.num_map_tasks))
+        actual_indexes = [int(d.get("index", i)) for i, d in enumerate(docs)]
+        if actual_indexes != expected_indexes:
+            raise ValueError(
+                f"cannot replay {source.job_id}: input shard indexes are not contiguous"
+            )
+
+        input_shards: list[str] = []
+        total_records = 0
+        for doc in docs:
+            index = int(doc.get("index", len(input_shards)))
+            sid = doc.get("shard_id") or shard_id("in", index)
+            records = list(doc.get("records", []))
+            total_records += len(records)
+            clone = {
+                "shard_id": sid,
+                "job_id": replay.job_id,
+                "stage": C.STAGE_INPUT,
+                "index": index,
+                "records": records,
+                "count": len(records),
+                "source_job_id": source.job_id,
+                "source_shard_id": sid,
+                "created_ms": now_ms(),
+            }
+            self.storage.write(
+                clone, "jobs", replay.job_id, "shards", C.STAGE_INPUT, f"{sid}.json",
+            )
+            input_shards.append(sid)
+
+        map_tasks = [new_task(replay, C.TASK_MAP, i) for i in range(len(docs))]
+        reduce_tasks = [new_task(replay, C.TASK_REDUCE, p)
+                        for p in range(source.num_reduce_tasks)]
+        return {
+            "input_shards": input_shards,
+            "map_tasks": map_tasks,
+            "reduce_tasks": reduce_tasks,
+            "total_records": total_records,
         }
 
     def load_input_shard(self, job_id: str, shard: str) -> list[Any]:
         doc = self.storage.read("jobs", job_id, "shards", C.STAGE_INPUT, f"{shard}.json", default={})
-        return doc.get("records", [])[:-1] if doc else []
+        return doc.get("records", []) if doc else []
 
     def input_shards(self, job: Job) -> list[dict]:
         out: list[dict] = []
