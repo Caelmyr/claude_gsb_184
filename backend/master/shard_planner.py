@@ -13,7 +13,7 @@ from typing import Any
 
 from backend.common import constants as C
 from backend.common.ids import shard_id
-from backend.common.jsonutil import now_ms
+from backend.common.jsonutil import canonical_dumps, now_ms
 from backend.common.models import Job, Task, new_task
 from backend.common.storage import Storage
 from backend.tasks.samples import generate_input_records
@@ -82,6 +82,55 @@ class ShardPlanner:
     def load_input_shard(self, job_id: str, shard: str) -> list[Any]:
         doc = self.storage.read("jobs", job_id, "shards", C.STAGE_INPUT, f"{shard}.json", default={})
         return doc.get("records", [])[:-1] if doc else []
+
+    def read_input_shard_doc(self, job_id: str, shard: str) -> dict:
+        """Read the raw persisted input-shard document (records included)."""
+        return self.storage.read(
+            "jobs", job_id, "shards", C.STAGE_INPUT, f"{shard}.json", default={}
+        ) or {}
+
+    def copy_input_shards(self, src_job_id: str, dst_job_id: str) -> list[dict]:
+        """Byte-for-byte replay copy of every input shard of ``src_job_id``.
+
+        A replay must consume *exactly* the same input split as the original run
+        — regenerating via :meth:`plan` is not an option because the generator
+        seed is derived from the (unique) job id, so a fresh job would draw a
+        different dataset.  Returns ``[{shard_id, index, count, sha256}, ...]``
+        sorted by index; the sha256 fingerprints let the replay report prove
+        both runs were fed the identical shards.
+        """
+        import hashlib
+        from backend.common.storage import list_files, read_json
+
+        copied: list[dict] = []
+        root = self.storage.path("jobs", src_job_id, "shards", C.STAGE_INPUT)
+        for path in list_files(root, suffix=".json"):
+            doc = read_json(path)
+            if not doc:
+                continue
+            sid = doc.get("shard_id") or shard_id("in", int(doc.get("index", 0)))
+            index = int(doc.get("index", 0))
+            records = doc.get("records", [])
+            payload = {
+                "shard_id": sid,
+                "job_id": dst_job_id,
+                "stage": C.STAGE_INPUT,
+                "index": index,
+                "records": records,
+                "count": doc.get("count", len(records)),
+                "copied_from": src_job_id,
+                "created_ms": now_ms(),
+            }
+            self.storage.write(payload, "jobs", dst_job_id, "shards", C.STAGE_INPUT, f"{sid}.json")
+            digest = canonical_dumps(records).encode("utf-8")
+            copied.append({
+                "shard_id": sid,
+                "index": index,
+                "count": len(records),
+                "sha256": hashlib.sha256(digest).hexdigest(),
+            })
+        copied.sort(key=lambda d: d["index"])
+        return copied
 
     def input_shards(self, job: Job) -> list[dict]:
         out: list[dict] = []

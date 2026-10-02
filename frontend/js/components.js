@@ -12,6 +12,7 @@ const Components = (() => {
     { key: 'fault', href: 'fault.html', label: '故障恢复 Fault' },
     { key: 'config', href: 'config.html', label: '配置管理 Config' },
     { key: 'results', href: 'results.html', label: '结果导出 Results' },
+    { key: 'replay', href: 'replay.html', label: '作业回放 Replay' },
   ];
 
   const LABELS = {

@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>作业回放 Replay — 分布式 MapReduce</title>
+  <link rel="stylesheet" href="css/app.css">
+</head>
+<body>
+  <header id="app-nav"></header>
+  <main class="page">
+    <h1 class="page-title">作业确定性回放 <span>Deterministic Replay &amp; Diff</span></h1>
+    <p class="page-desc">
+      用完全相同的输入分片、切分与参数重跑已完成作业，并自动对比两次结果。
+      Re-run a finished job with identical input shards, splits and parameters, then auto-diff the two runs.
+    </p>
+
+    <div class="flex between mb wrap">
+      <div id="job-picker" style="min-width:300px"></div>
+      <div class="flex">
+        <button class="btn primary small" id="btn-replay" disabled>回放此作业 Replay this job</button>
+      </div>
+    </div>
+
+    <div id="banner"></div>
+
+    <div class="stat-tiles" id="stats"></div>
+
+    <div class="grid cols-2 mt">
+      <div class="card">
+        <h2>回放条件 <span class="sub">Replay conditions</span></h2>
+        <div id="spec"></div>
+      </div>
+      <div class="card">
+        <h2>输入一致性指纹 <span class="sub">Input fingerprint</span></h2>
+        <div id="fingerprint"></div>
+      </div>
+    </div>
+
+    <div class="card mt">
+      <h2>分区记录数对比 <span class="sub">Per-partition counts</span></h2>
+      <div id="partitions"></div>
+    </div>
+
+    <div class="grid cols-2 mt">
+      <div class="card">
+        <h2>数值差异记录 <span class="sub">Value-diff records</span></h2>
+        <div id="value-diffs"></div>
+      </div>
+      <div class="card">
+        <h2>数量差异（缺失 / 多出） <span class="sub">Missing / Extra keys</span></h2>
+        <div id="count-diffs"></div>
+      </div>
+    </div>
+
+    <div class="card mt">
+      <h2>历史回放 <span class="sub">Replay history</span></h2>
+      <div id="history"></div>
+    </div>
+  </main>
+  <script src="js/api.js"></script>
+  <script src="js/components.js"></script>
+  <script src="js/pages/replay.js"></script>
+</body>
+</html>

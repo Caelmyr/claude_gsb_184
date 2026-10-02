@@ -127,6 +127,7 @@ class Job:
     stats: dict = field(default_factory=dict)
     error: str = ""
     params: dict = field(default_factory=dict)
+    replay_of: str = ""              # non-empty -> this job is a replay of that job_id
     version: int = 0
 
     @property

@@ -83,6 +83,12 @@ def loads(text: str | bytes, default: Any = None) -> Any:
 # ---------------------------------------------------------------------------
 # JSON-lines helpers
 # ---------------------------------------------------------------------------
+def canonical_dumps(obj: Any) -> str:
+    """Deterministic JSON text for content hashing (sorted keys, no whitespace)."""
+    return json.dumps(sanitize(obj), sort_keys=True, separators=(",", ":"),
+                      ensure_ascii=False, default=str)
+
+
 def dumps_line(obj: Any) -> str:
     """One JSON object on a single line (for JSONL log / shuffle files)."""
     return json.dumps(sanitize(obj), ensure_ascii=False, default=str)

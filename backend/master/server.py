@@ -25,6 +25,7 @@ from backend.master.fault_tolerance import FaultTolerance
 from backend.master.job_manager import JobManager
 from backend.master.metrics import Metrics
 from backend.master.registry import WorkerRegistry
+from backend.master.replay import ReplayService
 from backend.master.scheduler import Scheduler
 from backend.master.shuffle import ShuffleCoordinator
 from backend.tasks.registry import list_all as list_functions
@@ -50,10 +51,12 @@ class Master:
         self.metrics = Metrics(self.storage)
         self.shuffle = ShuffleCoordinator(self.storage, self.job_manager, self.registry, self.logbus)
         self.fault_tolerance = FaultTolerance(self.storage, self.job_manager, self.config, self.logbus)
+        self.replays = ReplayService(self.storage, self.job_manager, self.logbus)
         self.registry.on_death = self.fault_tolerance.handle_worker_death
         self.scheduler = Scheduler(
             self.storage, self.job_manager, self.registry, self.shuffle,
             self.fault_tolerance, self.metrics, self.config, self.logbus,
+            replay=self.replays,
         )
 
         self.app = Flask("master", static_folder=FRONTEND_DIR, static_url_path="")
@@ -89,6 +92,11 @@ class Master:
         app.add_url_rule("/api/jobs/<job_id>/results", "job_results", self._job_results, methods=["GET"])
         app.add_url_rule("/api/jobs/<job_id>/results/download", "job_results_download",
                          self._job_results_download, methods=["GET"])
+        app.add_url_rule("/api/jobs/<job_id>/replay", "job_replay_start",
+                         self._job_replay_start, methods=["POST"])
+        app.add_url_rule("/api/replays", "replays", self._replays, methods=["GET"])
+        app.add_url_rule("/api/replays/<replay_id>", "replay_detail",
+                         self._replay_detail, methods=["GET"])
         app.add_url_rule("/api/workers", "workers", self._workers, methods=["GET"])
         app.add_url_rule("/api/workers/<worker_id>/metrics", "worker_metrics", self._worker_metrics, methods=["GET"])
         app.add_url_rule("/api/cluster/metrics", "cluster_metrics", self._cluster_metrics, methods=["GET"])
@@ -310,6 +318,28 @@ class Master:
 
     def _workers(self):
         return jsonify(self.registry.summary())
+
+    # ------------------------------------------------------------------
+    # Replay routes
+    # ------------------------------------------------------------------
+    def _job_replay_start(self, job_id: str):
+        job, err, code = self._get_job(job_id)
+        if job is None:
+            return err, code
+        try:
+            manifest = self.replays.start(job_id)
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 400
+        return jsonify(manifest), 201
+
+    def _replays(self):
+        return jsonify({"replays": self.replays.list_replays()})
+
+    def _replay_detail(self, replay_id: str):
+        manifest = self.replays.get(replay_id)
+        if manifest is None:
+            return jsonify({"error": f"unknown replay {replay_id}"}), 404
+        return jsonify(manifest)
 
     def _worker_metrics(self, worker_id: str):
         return jsonify(self.metrics.worker_metrics(worker_id))

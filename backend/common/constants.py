@@ -58,6 +58,29 @@ TASK_MAP = "map"
 TASK_REDUCE = "reduce"
 
 # ---------------------------------------------------------------------------
+# Replay verdicts (stored on replay manifests under ``replays/``)
+# ---------------------------------------------------------------------------
+REPLAY_RUNNING = "RUNNING"            # replay job still executing
+REPLAY_MATCH = "MATCH"                # every record identical, same order
+REPLAY_ORDER_ONLY = "ORDER_ONLY"      # same records/values, presentation order differs
+REPLAY_VALUE_DIFF = "VALUE_DIFF"      # same keys/count, but numeric/field values differ
+REPLAY_COUNT_DIFF = "COUNT_DIFF"      # record set differs (missing / extra keys)
+REPLAY_MIXED_DIFF = "MIXED_DIFF"      # both value and count differences
+REPLAY_FAILED = "REPLAY_FAILED"       # the replay run itself failed
+
+REPLAY_VERDICTS = [
+    REPLAY_MATCH, REPLAY_ORDER_ONLY, REPLAY_VALUE_DIFF,
+    REPLAY_COUNT_DIFF, REPLAY_MIXED_DIFF,
+]
+REPLAY_TERMINAL_STATES = set(REPLAY_VERDICTS) | {REPLAY_FAILED}
+
+# Per-record difference categories reported in a replay report.
+DIFF_VALUE = "value"             # same key/count, a field value differs
+DIFF_COUNT = "count"             # key missing in replay or appearing only there
+DIFF_ORDER = "order"             # identical records, presentation order differs
+DIFF_PARTITION_COUNT = "partition_count"  # per-reducer partition record counts differ
+
+# ---------------------------------------------------------------------------
 # Worker states
 # ---------------------------------------------------------------------------
 WORKER_ALIVE = "alive"
@@ -92,6 +115,13 @@ STATE_LABELS = {
     TASK_RETRYING: "重试中 Retrying",
     WORKER_ALIVE: "存活 Alive",
     WORKER_DEAD: "失联 Dead",
+    REPLAY_RUNNING: "回放运行中 Replaying",
+    REPLAY_MATCH: "一致 Consistent",
+    REPLAY_ORDER_ONLY: "仅顺序差异 Order only",
+    REPLAY_VALUE_DIFF: "数值差异 Value diff",
+    REPLAY_COUNT_DIFF: "数量差异 Count diff",
+    REPLAY_MIXED_DIFF: "数值+数量差异 Mixed diff",
+    REPLAY_FAILED: "回放失败 Replay failed",
 }
 
 STAGE_LABELS = {

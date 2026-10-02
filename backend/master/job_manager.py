@@ -111,6 +111,37 @@ class JobManager:
         return job
 
     # ------------------------------------------------------------------
+    # Replay submission
+    # ------------------------------------------------------------------
+    def register_replay(self, job: Job, map_tasks: list, reduce_tasks: list) -> Job:
+        """Persist a replay job and its tasks without (re)planning input.
+
+        The replay's input shards were copied byte-for-byte by the caller, so
+        unlike :meth:`submit` this never generates or splits data — it only
+        adopts the task graph and opens the same lifecycle state machine.
+        """
+        with self._lock:
+            job.num_map_tasks = len(map_tasks)
+            job.map_task_ids = [t.task_id for t in map_tasks]
+            job.reduce_task_ids = [t.task_id for t in reduce_tasks]
+            job.status = C.JOB_MAP
+            job.started_ms = now_ms()
+            self._jobs[job.job_id] = job
+            self._tasks[job.job_id] = {}
+            for task in map_tasks + reduce_tasks:
+                self._tasks[job.job_id][task.task_id] = task
+                self.save_task(job.job_id, task)
+            self.save_job(job)
+
+        self.logbus.info(
+            job.job_id,
+            f"replay of {job.replay_of} started: {job.num_map_tasks} map / "
+            f"{job.num_reduce_tasks} reduce, identical input shards",
+            task_id="submit",
+        )
+        return job
+
+    # ------------------------------------------------------------------
     # Queries
     # ------------------------------------------------------------------
     def get_job(self, job_id: str) -> Optional[Job]:
@@ -243,6 +274,7 @@ class JobManager:
             "error": job.error,
             "params": job.params,
             "stats": job.stats,
+            "replay_of": job.replay_of,
             "task_status": by_status,
             "stage_progress": self.stage_progress(job),
         }

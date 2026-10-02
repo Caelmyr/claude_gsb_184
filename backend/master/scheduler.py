@@ -31,6 +31,7 @@ from backend.master.fault_tolerance import FaultTolerance
 from backend.master.job_manager import JobManager
 from backend.master.metrics import Metrics
 from backend.master.registry import WorkerRegistry
+from backend.master.replay import ReplayService
 from backend.master.shuffle import ShuffleCoordinator
 
 SHUFFLE_HOLD_MS = 400          # keep the SHUFFLE stage observable for one beat
@@ -48,6 +49,7 @@ class Scheduler:
         metrics: Metrics,
         config,
         logbus: LogBus,
+        replay: Optional[ReplayService] = None,
     ) -> None:
         self.storage = storage
         self.job_manager = job_manager
@@ -57,6 +59,7 @@ class Scheduler:
         self.metrics = metrics
         self.config = config
         self.logbus = logbus
+        self.replay = replay
         self.client = HttpClient(timeout=3.0, retries=1)
         self._stop = threading.Event()
         self._thread = threading.Thread(target=self._loop, daemon=True, name="scheduler")
@@ -93,6 +96,13 @@ class Scheduler:
                 continue
             try:
                 self._advance(job)
+            except Exception:  # noqa: BLE001
+                traceback.print_exc()
+
+        # 3. Finalise replays whose run just reached a terminal state.
+        if self.replay is not None:
+            try:
+                self.replay.sweep_terminal()
             except Exception:  # noqa: BLE001
                 traceback.print_exc()
 

@@ -11,6 +11,7 @@ async function render() {
 
   document.getElementById('dl-json').href = '/api/jobs/' + currentJob + '/results/download?format=json';
   document.getElementById('dl-csv').href = '/api/jobs/' + currentJob + '/results/download?format=csv';
+  document.getElementById('go-replay').href = 'replay.html?job=' + encodeURIComponent(currentJob);
 
   document.getElementById('stats').innerHTML = [
     { label: '结果记录 Total records', value: C.fmtNum(d.total) },
